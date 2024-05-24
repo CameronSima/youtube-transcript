@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build the project
+        run: npm run build
+
+      - name: Check for version change
+        id: version-check
+        run: |
+          # Fetch tags to compare versions
+          git fetch --tags
+          CURRENT_VERSION=$(jq -r '.version' < package.json)
+          echo "Current version: $CURRENT_VERSION"
+          LAST_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
+          echo "Last tag: $LAST_TAG"
+          if [ "$CURRENT_VERSION" = "$LAST_TAG" ]; then
+            echo "Version has not changed. Skipping release."
+            echo "release_needed=false" >> $GITHUB_ENV
+          else
+            echo "Version has changed. Proceeding with release."
+            echo "release_needed=true" >> $GITHUB_ENV
+          fi
+
+      - name: Create GitHub release
+        if: env.release_needed == 'true'
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: v${{ steps.version-check.outputs.CURRENT_VERSION }}
+          release_name: Release v${{ steps.version-check.outputs.CURRENT_VERSION }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release asset
+        if: env.release_needed == 'true'
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dist/your-library-file.js
+          asset_name: your-library-file.js
+          asset_content_type: application/javascript
